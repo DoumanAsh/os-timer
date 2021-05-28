@@ -115,7 +115,9 @@ impl Timer {
     ///# Note
     ///
     ///- `interval` is truncated by `u32::max_value()`
-    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) {
+    ///
+    ///Returns `true` if successfully set, otherwise on error returns `false`
+    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) -> bool {
         let mut ticks = i64::from(timeout.subsec_nanos() / 100);
         ticks += (timeout.as_secs() * 10_000_000) as i64;
         let ticks = -ticks;
@@ -126,6 +128,8 @@ impl Timer {
             let mut time: ffi::FileTime = mem::transmute(ticks);
             ffi::SetThreadpoolTimerEx(self.get_inner(), &mut time, interval, 0);
         }
+
+        true
     }
 
     ///Cancels ongoing timer, if it was armed.

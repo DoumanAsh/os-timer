@@ -28,8 +28,10 @@ impl Timer {
     ///
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
     ///To prevent that user must `cancel` timer first.
-    pub fn schedule_once(&self, timeout: time::Duration) {
-        self.schedule_interval(timeout, time::Duration::from_secs(0));
+    ///
+    ///Returns `true` if successfully set, otherwise on error returns `false`
+    pub fn schedule_once(&self, timeout: time::Duration) -> bool {
+        self.schedule_interval(timeout, time::Duration::from_secs(0))
     }
 }
 
@@ -60,7 +62,9 @@ impl<'a> Schedule<'a> {
 
     #[inline(always)]
     ///Schedules timer execution, using provided settings.
-    pub fn schedule(&self) {
-        self.timer.schedule_interval(self.timeout, self.interval);
+    ///
+    ///Returns `true` if successfully set, otherwise on error returns `false`
+    pub fn schedule(&self) -> bool {
+        self.timer.schedule_interval(self.timeout, self.interval)
     }
 }

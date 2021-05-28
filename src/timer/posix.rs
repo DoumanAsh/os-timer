@@ -112,7 +112,9 @@ impl Timer {
     ///
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
     ///To prevent that user must `cancel` timer first.
-    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) {
+    ///
+    ///Returns `true` if successfully set, otherwise on error returns `false`
+    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) -> bool {
         let it_value = libc::timespec {
             tv_sec: timeout.as_secs() as libc::time_t,
             #[cfg(not(any(target_os = "openbsd", target_os = "netbsd")))]
@@ -135,7 +137,7 @@ impl Timer {
         };
 
         unsafe {
-            assert_eq!(ffi::timer_settime(self.get_inner(), 0, &new_value, ptr::null_mut()), 0);
+            ffi::timer_settime(self.get_inner(), 0, &new_value, ptr::null_mut()) == 0
         }
     }
 

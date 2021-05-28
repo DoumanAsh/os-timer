@@ -187,7 +187,9 @@ impl Timer {
     ///
     ///- `timeout` is truncated by `i64::max_value()`
     ///- `interval` is truncated by `u64::max_value()`
-    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) {
+    ///
+    ///Returns `true` if successfully set, otherwise on error returns `false`
+    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) -> bool {
         let handle = self.get_inner();
 
         self.suspend();
@@ -198,6 +200,8 @@ impl Timer {
         }
 
         self.resume();
+
+        true
     }
 
     #[inline]
