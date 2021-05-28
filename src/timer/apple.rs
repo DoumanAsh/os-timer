@@ -178,20 +178,23 @@ impl Timer {
         self.resume();
     }
 
-    ///Schedules timer to alarm periodically with `interval` timeout.
+    ///Schedules timer to alarm periodically with `interval` with initial alarm of `timeout`.
     ///
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
     ///To prevent that user must `cancel` timer first.
     ///
-    ///Note that due to dispatch API limitations, `interval` is truncated by `u64::max_value()`
-    pub fn schedule_interval(&self, timeout: time::Duration) {
+    ///# Note
+    ///
+    ///- `timeout` is truncated by `i64::max_value()`
+    ///- `interval` is truncated by `u64::max_value()`
+    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) {
         let handle = self.get_inner();
 
         self.suspend();
 
         unsafe {
             let start = ffi::dispatch_walltime(ptr::null(), timeout.as_nanos() as i64);
-            ffi::dispatch_source_set_timer(handle, start, timeout.as_nanos() as _, 0);
+            ffi::dispatch_source_set_timer(handle, start, interval.as_nanos() as _, 0);
         }
 
         self.resume();

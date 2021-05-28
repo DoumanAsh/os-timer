@@ -107,33 +107,20 @@ impl Timer {
         })
     }
 
-    ///Schedules timer to alarm once after `timeout` passes.
-    ///
-    ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
-    ///To prevent that user must `cancel` timer first.
-    pub fn schedule_once(&self, timeout: time::Duration) {
-        let mut ticks = i64::from(timeout.subsec_nanos() / 100);
-        ticks += (timeout.as_secs() * 10_000_000) as i64;
-        let ticks = -ticks;
-
-        unsafe {
-            let mut time: ffi::FileTime = mem::transmute(ticks);
-            ffi::SetThreadpoolTimerEx(self.get_inner(), &mut time, 0, 0);
-        }
-    }
-
-    ///Schedules timer to alarm periodically with `interval` timeout.
+    ///Schedules timer to alarm periodically with `interval` with initial alarm of `timeout`.
     ///
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
     ///To prevent that user must `cancel` timer first.
     ///
-    ///Note that due to winapi limitations, `interval` is truncated by `u32::max_value()`
-    pub fn schedule_interval(&self, timeout: time::Duration) {
+    ///# Note
+    ///
+    ///- `interval` is truncated by `u32::max_value()`
+    pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) {
         let mut ticks = i64::from(timeout.subsec_nanos() / 100);
         ticks += (timeout.as_secs() * 10_000_000) as i64;
         let ticks = -ticks;
 
-        let interval = timeout.as_millis() as u32;
+        let interval = interval.as_millis() as u32;
 
         unsafe {
             let mut time: ffi::FileTime = mem::transmute(ticks);

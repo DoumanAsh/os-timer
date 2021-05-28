@@ -34,13 +34,15 @@ fn timer_schedule_interval() {
     }
 
     let timer = Timer::new(cb).expect("To create timer");
-    timer.schedule_interval(time::Duration::from_millis(250));
+    timer.schedule_interval(time::Duration::from_secs(1), time::Duration::from_millis(250));
 
     std::thread::sleep(time::Duration::from_millis(1100));
-    assert_eq!(COUNT.load(Ordering::Acquire), 4);
+    assert_eq!(COUNT.load(Ordering::Acquire), 1);
+    std::thread::sleep(time::Duration::from_millis(1100));
+    assert_eq!(COUNT.load(Ordering::Acquire), 5);
 
     timer.cancel();
 
     std::thread::sleep(time::Duration::from_millis(1100));
-    assert_eq!(COUNT.load(Ordering::Acquire), 4);
+    assert_eq!(COUNT.load(Ordering::Acquire), 5);
 }
