@@ -144,7 +144,7 @@ impl Timer {
     ///Cancels ongoing timer, if it was armed.
     pub fn cancel(&self) {
         unsafe {
-            ffi::timer_settime(self.get_inner(), 0, mem::MaybeUninit::zeroed().assume_init(), ptr::null_mut());
+            ffi::timer_settime(self.get_inner(), 0, &mem::MaybeUninit::zeroed().assume_init(), ptr::null_mut());
         }
     }
 }

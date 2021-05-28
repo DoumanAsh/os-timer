@@ -15,6 +15,6 @@ fn main() {
     let target = env::var("TARGET").unwrap();
 
     if is_unix(&target) {
-        cc::Build::new().file("src/timer/posix.c").compile("os-timer-posix-c.a");
+        cc::Build::new().file("src/timer/posix.c").compile("libos-timer-posix-c.a");
     }
 }

@@ -164,7 +164,7 @@ impl Timer {
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
     ///To prevent that user must `cancel` timer first.
     ///
-    ///Note that due to dispatch API limitations, `timeout` is truncated by `i64::max_value()`
+    ///Also due to dispatch API limitations, `timeout` is truncated by `i64::max_value()`
     pub fn schedule_once(&self, timeout: time::Duration) {
         let handle = self.get_inner();
 

@@ -23,6 +23,7 @@ impl Timer {
         }
     }
 
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     #[inline(always)]
     ///Schedules timer to alarm once after `timeout` passes.
     ///
