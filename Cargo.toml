@@ -7,8 +7,8 @@ description = "OS Timers for Rust "
 readme = "README.md"
 repository = "https://github.com/DoumanAsh/os-timer"
 license = "BSL-1.0"
-keywords = ["timer", "wasm"]
-categories = ["wasm", "no-std"]
+keywords = ["timer"]
+categories = ["no-std"]
 include = [
     "**/*.rs",
     "**/*.c",
