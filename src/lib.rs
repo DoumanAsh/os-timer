@@ -1,4 +1,9 @@
 //! Cross-platform wrapper over OS timers
+//!
+//! # Requirements
+//!
+//! - Posix timer requires compilation of C shim (i.e. Correct C compiler must be available when
+//! compiling for posix target).
 
 #![no_std]
 #![warn(missing_docs)]
