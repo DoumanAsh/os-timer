@@ -87,20 +87,6 @@ impl Callback {
     }
 }
 
-impl From<fn()> for Callback {
-    #[inline(always)]
-    fn from(cb: fn()) -> Self {
-        Self::plain(cb)
-    }
-}
-
-impl From<unsafe fn()> for Callback {
-    #[inline(always)]
-    fn from(cb: unsafe fn()) -> Self {
-        Self::unsafe_plain(cb)
-    }
-}
-
 #[cfg(target_pointer_width = "16")]
 type FatPtr = u32;
 #[cfg(target_pointer_width = "32")]
@@ -189,9 +175,19 @@ impl Timer {
     ///Creates new timer, invoking provided `cb` when timer expires.
     ///
     ///On failure, returns `None`
-    pub fn new(cb: fn()) -> Option<Self> {
+    pub fn new(cb: Callback) -> Option<Self> {
+        let ffi_cb = cb.ffi_cb;
+        let (data, ffi_data) = match cb.variant {
+            CallbackVariant::Plain(cb) => (0, cb as *mut ffi::c_void),
+            CallbackVariant::PlainUnsafe(cb) => (0, cb as *mut ffi::c_void),
+            CallbackVariant::Closure(cb) => unsafe {
+                let raw = Box::into_raw(cb);
+                (mem::transmute(raw), raw as *mut ffi::c_void)
+            },
+        };
+
         let handle = unsafe {
-            ffi::CreateThreadpoolTimer(Some(timer_callback), cb as _, ptr::null_mut())
+            ffi::CreateThreadpoolTimer(ffi_cb, ffi_data, ptr::null_mut())
         };
 
         if handle.is_null() {
@@ -200,7 +196,7 @@ impl Timer {
 
         Some(Self {
             inner: AtomicPtr::new(handle),
-            data: Cell::new(0),
+            data: Cell::new(data),
         })
     }
 
@@ -252,8 +248,59 @@ impl Drop for Timer {
         let data = self.data.get();
         if data != 0 {
             unsafe {
-                Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
+                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_plain_fn() {
+        let timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::plain(cb)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert_eq!(timer.data.get(), 0);
+
+        assert!(!timer.init(Callback::closure(closure)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert_eq!(timer.data.get(), 0);
+    }
+
+    #[test]
+    fn init_closure() {
+        let timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::closure(closure)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert_ne!(timer.data.get(), 0);
+
+        assert!(!timer.init(Callback::plain(cb)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert_ne!(timer.data.get(), 0);
     }
 }
