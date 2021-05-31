@@ -1,9 +1,9 @@
 use core::{time, ptr, mem};
 use core::cell::Cell;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use super::FatPtr;
 
 extern crate alloc;
-
 use alloc::boxed::Box;
 
 mod ffi {
@@ -46,7 +46,6 @@ unsafe extern "system" fn timer_callback_generic<T: FnMut() -> ()>(_: *mut ffi::
     (cb)();
 }
 
-
 enum CallbackVariant {
     PlainUnsafe(unsafe fn()),
     Plain(fn()),
@@ -86,27 +85,6 @@ impl Callback {
         }
     }
 }
-
-impl From<fn()> for Callback {
-    #[inline(always)]
-    fn from(cb: fn()) -> Self {
-        Self::plain(cb)
-    }
-}
-
-impl From<unsafe fn()> for Callback {
-    #[inline(always)]
-    fn from(cb: unsafe fn()) -> Self {
-        Self::unsafe_plain(cb)
-    }
-}
-
-#[cfg(target_pointer_width = "16")]
-type FatPtr = u32;
-#[cfg(target_pointer_width = "32")]
-type FatPtr = u64;
-#[cfg(target_pointer_width = "64")]
-type FatPtr = u128;
 
 ///Windows thread pool timer
 pub struct Timer {

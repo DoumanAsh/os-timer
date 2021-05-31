@@ -1,5 +1,12 @@
 use core::time;
 
+#[cfg(target_pointer_width = "16")]
+type FatPtr = u32;
+#[cfg(target_pointer_width = "32")]
+type FatPtr = u64;
+#[cfg(target_pointer_width = "64")]
+type FatPtr = u128;
+
 #[cfg(windows)]
 mod win32;
 #[cfg(windows)]
@@ -75,3 +82,4 @@ impl<'a> Schedule<'a> {
         self.timer.schedule_interval(self.timeout, self.interval)
     }
 }
+
