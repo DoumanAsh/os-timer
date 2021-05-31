@@ -35,7 +35,7 @@ unsafe extern "system" fn timer_callback(_: *mut ffi::c_void, data: *mut ffi::c_
 }
 
 unsafe extern "system" fn timer_callback_unsafe(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
-    let cb: fn() -> () = mem::transmute(data);
+    let cb: unsafe fn() -> () = mem::transmute(data);
 
     (cb)();
 }
@@ -84,6 +84,20 @@ impl Callback {
             variant: CallbackVariant::Closure(Box::new(cb)),
             ffi_cb: Some(timer_callback_generic::<F>),
         }
+    }
+}
+
+impl From<fn()> for Callback {
+    #[inline(always)]
+    fn from(cb: fn()) -> Self {
+        Self::plain(cb)
+    }
+}
+
+impl From<unsafe fn()> for Callback {
+    #[inline(always)]
+    fn from(cb: unsafe fn()) -> Self {
+        Self::unsafe_plain(cb)
     }
 }
 
