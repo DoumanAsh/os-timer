@@ -1,5 +1,10 @@
 use core::{time, ptr, mem};
+use core::cell::Cell;
 use core::sync::atomic::{AtomicPtr, Ordering};
+
+extern crate alloc;
+
+use alloc::boxed::Box;
 
 mod ffi {
     pub use core::ffi::c_void;
@@ -13,7 +18,7 @@ mod ffi {
         pub high_date_time: DWORD,
     }
 
-    type Callback = Option<unsafe extern "system" fn(cb_inst: *mut c_void, ctx: *mut c_void, timer: *mut c_void)>;
+    pub type Callback = Option<unsafe extern "system" fn(cb_inst: *mut c_void, ctx: *mut c_void, timer: *mut c_void)>;
 
     extern "system" {
         pub fn CloseThreadpoolTimer(ptr: *mut c_void);
@@ -24,18 +29,89 @@ mod ffi {
 }
 
 unsafe extern "system" fn timer_callback(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
-    if data.is_null() {
-        return;
-    }
-
     let cb: fn() -> () = mem::transmute(data);
 
     (cb)();
 }
 
+unsafe extern "system" fn timer_callback_unsafe(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
+    let cb: fn() -> () = mem::transmute(data);
+
+    (cb)();
+}
+
+unsafe extern "system" fn timer_callback_generic<T: FnMut() -> ()>(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
+    let cb = &mut *(data as *mut T);
+
+    (cb)();
+}
+
+
+enum CallbackVariant {
+    PlainUnsafe(unsafe fn()),
+    Plain(fn()),
+    Closure(Box<dyn FnMut()>),
+}
+
+///Timer's callback abstraction
+pub struct Callback {
+    variant: CallbackVariant,
+    ffi_cb: ffi::Callback,
+}
+
+//Cannot do From<T> for Callback
+//cuz no fucking specialization in stable
+impl Callback {
+    ///Creates callback using plain rust function
+    pub fn plain(cb: fn()) -> Self {
+        Self {
+            variant: CallbackVariant::Plain(cb),
+            ffi_cb: Some(timer_callback),
+        }
+    }
+
+    ///Creates callback using plain unsafe function
+    pub fn unsafe_plain(cb: unsafe fn()) -> Self {
+        Self {
+            variant: CallbackVariant::PlainUnsafe(cb),
+            ffi_cb: Some(timer_callback_unsafe),
+        }
+    }
+
+    ///Creates callback using closure, storing it on heap.
+    pub fn closure<F: 'static + FnMut()>(cb: F) -> Self {
+        Self {
+            variant: CallbackVariant::Closure(Box::new(cb)),
+            ffi_cb: Some(timer_callback_generic::<F>),
+        }
+    }
+}
+
+impl From<fn()> for Callback {
+    #[inline(always)]
+    fn from(cb: fn()) -> Self {
+        Self::plain(cb)
+    }
+}
+
+impl From<unsafe fn()> for Callback {
+    #[inline(always)]
+    fn from(cb: unsafe fn()) -> Self {
+        Self::unsafe_plain(cb)
+    }
+}
+
+#[cfg(target_pointer_width = "16")]
+type FatPtr = u32;
+#[cfg(target_pointer_width = "32")]
+type FatPtr = u64;
+#[cfg(target_pointer_width = "64")]
+type FatPtr = u128;
+
 ///Windows thread pool timer
 pub struct Timer {
     inner: AtomicPtr<ffi::c_void>,
+    data: Cell<FatPtr>,
 }
 
 impl Timer {
@@ -45,7 +121,8 @@ impl Timer {
     ///In order to use it one must call `init`.
     pub const unsafe fn uninit() -> Self {
         Self {
-            inner: AtomicPtr::new(ptr::null_mut())
+            inner: AtomicPtr::new(ptr::null_mut()),
+            data: Cell::new(0),
         }
     }
 
@@ -65,22 +142,41 @@ impl Timer {
     #[must_use]
     ///Performs timer initialization
     ///
-    ///`cb` pointer to function to invoke when timer expires.
+    ///`cb` is variant of callback to invoke when timer expires
     ///
     ///Returns whether timer has been initialized successfully or not.
     ///
     ///If timer is already initialized does nothing, returning false.
-    pub fn init(&self, cb: fn()) -> bool {
+    pub fn init(&self, cb: Callback) -> bool {
         if self.is_init() {
             return false;
         }
 
+        let ffi_cb = cb.ffi_cb;
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
+        };
+
         let handle = unsafe {
-            ffi::CreateThreadpoolTimer(Some(timer_callback), cb as _, ptr::null_mut())
+            ffi::CreateThreadpoolTimer(ffi_cb, ffi_data, ptr::null_mut())
         };
 
         match self.inner.compare_exchange(ptr::null_mut(), handle, Ordering::SeqCst, Ordering::Acquire) {
-            Ok(_) => !handle.is_null(),
+            Ok(_) => match handle.is_null() {
+                true => false,
+                false => {
+                    match cb.variant {
+                        CallbackVariant::Closure(cb) => unsafe {
+                            //safe because we can never reach here once `handle.is_null() != true`
+                            self.data.set(mem::transmute(Box::into_raw(cb)))
+                        },
+                        _ => (),
+                    }
+                    true
+                },
+            },
             Err(_) => {
                 unsafe {
                     ffi::CloseThreadpoolTimer(handle);
@@ -103,7 +199,8 @@ impl Timer {
         }
 
         Some(Self {
-            inner: AtomicPtr::new(handle)
+            inner: AtomicPtr::new(handle),
+            data: Cell::new(0),
         })
     }
 
@@ -149,6 +246,13 @@ impl Drop for Timer {
             self.cancel();
             unsafe {
                 ffi::CloseThreadpoolTimer(handle);
+            }
+        }
+
+        let data = self.data.get();
+        if data != 0 {
+            unsafe {
+                Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
             }
         }
     }
