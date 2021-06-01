@@ -30,6 +30,13 @@ fn timer_schedule_once() {
 
     std::thread::sleep(time::Duration::from_millis(1000));
     assert_eq!(COUNT.load(Ordering::Acquire), 1);
+
+    timer.cancel();
+    assert!(!timer.is_scheduled());
+
+    std::thread::sleep(time::Duration::from_millis(1000));
+    assert_eq!(COUNT.load(Ordering::Acquire), 1);
+
 }
 
 #[test]
