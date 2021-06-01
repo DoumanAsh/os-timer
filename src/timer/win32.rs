@@ -58,8 +58,6 @@ pub struct Callback {
     ffi_cb: ffi::Callback,
 }
 
-//Cannot do From<T> for Callback
-//cuz no fucking specialization in stable
 impl Callback {
     ///Creates callback using plain rust function
     pub fn plain(cb: fn()) -> Self {
@@ -169,13 +167,10 @@ impl Timer {
     ///On failure, returns `None`
     pub fn new(cb: Callback) -> Option<Self> {
         let ffi_cb = cb.ffi_cb;
-        let (data, ffi_data) = match cb.variant {
-            CallbackVariant::Plain(cb) => (0, cb as *mut ffi::c_void),
-            CallbackVariant::PlainUnsafe(cb) => (0, cb as *mut ffi::c_void),
-            CallbackVariant::Closure(cb) => unsafe {
-                let raw = Box::into_raw(cb);
-                (mem::transmute(raw), raw as *mut ffi::c_void)
-            },
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
         };
 
         let handle = unsafe {
@@ -185,6 +180,14 @@ impl Timer {
         if handle.is_null() {
             return None;
         }
+
+        let data = match cb.variant {
+            CallbackVariant::Closure(cb) => unsafe {
+                //safe because we can never reach here once `handle.is_null() != true`
+                mem::transmute(Box::into_raw(cb))
+            },
+            _ => 0,
+        };
 
         Some(Self {
             inner: AtomicPtr::new(handle),

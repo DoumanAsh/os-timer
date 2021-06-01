@@ -70,8 +70,6 @@ pub struct Callback {
     ffi_cb: ffi::Callback,
 }
 
-//Cannot do From<T> for Callback
-//cuz no fucking specialization in stable
 impl Callback {
     ///Creates callback using plain rust function
     pub fn plain(cb: fn()) -> Self {

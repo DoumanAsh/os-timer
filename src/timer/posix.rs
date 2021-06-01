@@ -1,18 +1,33 @@
 use core::{ptr, time, mem};
+use core::cell::Cell;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use super::FatPtr;
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 mod ffi {
     use core::mem;
+    pub use libc::c_void;
     #[allow(non_camel_case_types)]
     pub type timer_t = usize;
 
-    pub unsafe extern "C" fn timer_handler(value: libc::sigval) {
-        let data = value.sival_ptr;
-        if data.is_null() {
-            return;
-        }
+    pub type Callback = Option<unsafe extern "C" fn(libc::sigval)>;
 
-        let cb: fn() -> () = mem::transmute(data);
+    pub unsafe extern "C" fn timer_callback(value: libc::sigval) {
+        let cb: fn() -> () = mem::transmute(value.sival_ptr);
+
+        (cb)();
+    }
+
+    pub unsafe extern "C" fn timer_callback_unsafe(value: libc::sigval) {
+        let cb: unsafe fn() -> () = mem::transmute(value.sival_ptr);
+
+        (cb)();
+    }
+
+    pub unsafe extern "C" fn timer_callback_generic<T: FnMut() -> ()>(value: libc::sigval) {
+        let cb = &mut *(value.sival_ptr as *mut T);
 
         (cb)();
     }
@@ -34,9 +49,48 @@ mod ffi {
     }
 }
 
+enum CallbackVariant {
+    PlainUnsafe(unsafe fn()),
+    Plain(fn()),
+    Closure(Box<dyn FnMut()>),
+}
+
+///Timer's callback abstraction
+pub struct Callback {
+    variant: CallbackVariant,
+    ffi_cb: ffi::Callback,
+}
+
+impl Callback {
+    ///Creates callback using plain rust function
+    pub fn plain(cb: fn()) -> Self {
+        Self {
+            variant: CallbackVariant::Plain(cb),
+            ffi_cb: Some(ffi::timer_callback),
+        }
+    }
+
+    ///Creates callback using plain unsafe function
+    pub fn unsafe_plain(cb: unsafe fn()) -> Self {
+        Self {
+            variant: CallbackVariant::PlainUnsafe(cb),
+            ffi_cb: Some(ffi::timer_callback_unsafe),
+        }
+    }
+
+    ///Creates callback using closure, storing it on heap.
+    pub fn closure<F: 'static + FnMut()>(cb: F) -> Self {
+        Self {
+            variant: CallbackVariant::Closure(Box::new(cb)),
+            ffi_cb: Some(ffi::timer_callback_generic::<F>),
+        }
+    }
+}
+
 ///Posix timer wrapper
 pub struct Timer {
     inner: AtomicUsize,
+    data: Cell<FatPtr>,
 }
 
 impl Timer {
@@ -47,6 +101,7 @@ impl Timer {
     pub const unsafe fn uninit() -> Self {
         Self {
             inner: AtomicUsize::new(0),
+            data: Cell::new(0),
         }
     }
 
@@ -71,17 +126,36 @@ impl Timer {
     ///Returns whether timer has been initialized successfully or not.
     ///
     ///If timer is already initialized does nothing, returning false.
-    pub fn init(&self, cb: fn()) -> bool {
+    pub fn init(&self, cb: Callback) -> bool {
         if self.is_init() {
             return false;
         }
 
+        let ffi_cb = cb.ffi_cb;
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => cb as *const _ as *mut ffi::c_void,
+        };
+
         let handle = unsafe {
-            ffi::posix_timer(libc::CLOCK_MONOTONIC, Some(ffi::timer_handler), cb as *mut libc::c_void)
+            ffi::posix_timer(libc::CLOCK_MONOTONIC, ffi_cb, ffi_data)
         };
 
         match self.inner.compare_exchange(0, handle, Ordering::SeqCst, Ordering::Acquire) {
-            Ok(_) => handle != 0,
+            Ok(_) => match handle {
+                0 => false,
+                _ => {
+                    match cb.variant {
+                        CallbackVariant::Closure(cb) => unsafe {
+                            //safe because we can never reach here once `handle.is_null() != true`
+                            self.data.set(mem::transmute(Box::into_raw(cb)))
+                        },
+                        _ => (),
+                    }
+                    true
+                },
+            },
             Err(_) => {
                 unsafe {
                     ffi::timer_delete(handle);
@@ -94,17 +168,33 @@ impl Timer {
     ///Creates new timer, invoking provided `cb` when timer expires.
     ///
     ///On failure, returns `None`
-    pub fn new(cb: fn()) -> Option<Self> {
+    pub fn new(cb: Callback) -> Option<Self> {
+        let ffi_cb = cb.ffi_cb;
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
+        };
+
         let handle = unsafe {
-            ffi::posix_timer(libc::CLOCK_MONOTONIC, Some(ffi::timer_handler), cb as *mut libc::c_void)
+            ffi::posix_timer(libc::CLOCK_MONOTONIC, ffi_cb, ffi_data)
         };
 
         if handle == 0 {
             return None;
         }
 
+        let data = match cb.variant {
+            CallbackVariant::Closure(cb) => unsafe {
+                //safe because we can never reach here once `handle.is_null() != true`
+                mem::transmute(Box::into_raw(cb))
+            },
+            _ => 0,
+        };
+
         Some(Self {
-            inner: AtomicUsize::new(handle)
+            inner: AtomicUsize::new(handle),
+            data: Cell::new(data),
         })
     }
 
