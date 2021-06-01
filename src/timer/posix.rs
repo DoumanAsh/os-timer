@@ -1,7 +1,7 @@
 use core::{ptr, time, mem};
 use core::cell::Cell;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use super::FatPtr;
+use super::BoxFnPtr;
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -90,7 +90,7 @@ impl Callback {
 ///Posix timer wrapper
 pub struct Timer {
     inner: AtomicUsize,
-    data: Cell<FatPtr>,
+    data: Cell<BoxFnPtr>,
 }
 
 impl Timer {
@@ -101,7 +101,7 @@ impl Timer {
     pub const unsafe fn uninit() -> Self {
         Self {
             inner: AtomicUsize::new(0),
-            data: Cell::new(0),
+            data: Cell::new(BoxFnPtr::new()),
         }
     }
 
@@ -147,9 +147,9 @@ impl Timer {
                 0 => false,
                 _ => {
                     match cb.variant {
-                        CallbackVariant::Closure(cb) => unsafe {
+                        CallbackVariant::Closure(cb) => {
                             //safe because we can never reach here once `handle.is_null() != true`
-                            self.data.set(mem::transmute(Box::into_raw(cb)))
+                            self.data.set(cb.into());
                         },
                         _ => (),
                     }
@@ -185,11 +185,8 @@ impl Timer {
         }
 
         let data = match cb.variant {
-            CallbackVariant::Closure(cb) => unsafe {
-                //safe because we can never reach here once `handle.is_null() != true`
-                mem::transmute(Box::into_raw(cb))
-            },
-            _ => 0,
+            CallbackVariant::Closure(cb) => cb.into(),
+            _ => BoxFnPtr::new(),
         };
 
         Some(Self {
@@ -248,13 +245,6 @@ impl Drop for Timer {
                 ffi::timer_delete(handle)
             }
         }
-
-        let data = self.data.get();
-        if data != 0 {
-            unsafe {
-                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
-            }
-        }
     }
 }
 
@@ -264,7 +254,7 @@ mod tests {
 
     #[test]
     fn init_plain_fn() {
-        let timer = unsafe {
+        let mut timer = unsafe {
             Timer::uninit()
         };
 
@@ -277,17 +267,17 @@ mod tests {
         assert!(timer.init(Callback::plain(cb)));
         let ptr = timer.inner.load(Ordering::Relaxed);
         assert!(!ptr.is_null());
-        assert_eq!(timer.data.get(), 0);
+        assert!(timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::closure(closure)));
         assert!(!ptr.is_null());
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
-        assert_eq!(timer.data.get(), 0);
+        assert!(timer.data.get_mut().is_null());
     }
 
     #[test]
     fn init_closure() {
-        let timer = unsafe {
+        let mut timer = unsafe {
             Timer::uninit()
         };
 
@@ -300,11 +290,11 @@ mod tests {
         assert!(timer.init(Callback::closure(closure)));
         let ptr = timer.inner.load(Ordering::Relaxed);
         assert!(!ptr.is_null());
-        assert_ne!(timer.data.get(), 0);
+        assert!(!timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::plain(cb)));
         assert!(!ptr.is_null());
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
-        assert_ne!(timer.data.get(), 0);
+        assert!(!timer.data.get_mut().is_null());
     }
 }

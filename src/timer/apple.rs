@@ -1,7 +1,7 @@
 use core::{time, mem, ptr};
 use core::cell::Cell;
 use core::sync::atomic::{AtomicPtr, AtomicBool, Ordering};
-use super::FatPtr;
+use super::BoxFnPtr;
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -101,7 +101,7 @@ pub struct Timer {
     inner: AtomicPtr<ffi::c_void>,
     //Suspension count. Incremented suspend, and decremented on each resume
     suspend: AtomicBool,
-    data: Cell<FatPtr>,
+    data: Cell<BoxFnPtr>,
 }
 
 impl Timer {
@@ -114,7 +114,7 @@ impl Timer {
             inner: AtomicPtr::new(ptr::null_mut()),
             //Note timer is created suspended.
             suspend: AtomicBool::new(true),
-            data: Cell::new(0),
+            data: Cell::new(BoxFnPtr::new()),
         }
     }
 
@@ -185,7 +185,7 @@ impl Timer {
                         ffi::dispatch_source_set_event_handler_f(handle, ffi_cb);
                         ffi::dispatch_set_context(handle, ffi_data);
                     }
-                    self.data.set(data);
+                    self.data.set(BoxFnPtr(data));
                     true
                 }
             },
@@ -230,7 +230,7 @@ impl Timer {
         Some(Self {
             inner: AtomicPtr::new(handle as _),
             suspend: AtomicBool::new(true),
-            data: Cell::new(data),
+            data: Cell::new(BoxFnPtr(data)),
         })
     }
 
@@ -300,13 +300,6 @@ impl Drop for Timer {
                 ffi::dispatch_release(handle);
             }
         }
-
-        let data = self.data.get();
-        if data != 0 {
-            unsafe {
-                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
-            }
-        }
     }
 }
 
@@ -316,7 +309,7 @@ mod tests {
 
     #[test]
     fn init_plain_fn() {
-        let timer = unsafe {
+        let mut timer = unsafe {
             Timer::uninit()
         };
 
@@ -329,17 +322,17 @@ mod tests {
         assert!(timer.init(Callback::plain(cb)));
         let ptr = timer.inner.load(Ordering::Relaxed);
         assert!(!ptr.is_null());
-        assert_eq!(timer.data.get(), 0);
+        assert!(timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::closure(closure)));
         assert!(!ptr.is_null());
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
-        assert_eq!(timer.data.get(), 0);
+        assert!(timer.data.get_mut().is_null());
     }
 
     #[test]
     fn init_closure() {
-        let timer = unsafe {
+        let mut timer = unsafe {
             Timer::uninit()
         };
 
@@ -352,11 +345,11 @@ mod tests {
         assert!(timer.init(Callback::closure(closure)));
         let ptr = timer.inner.load(Ordering::Relaxed);
         assert!(!ptr.is_null());
-        assert_ne!(timer.data.get(), 0);
+        assert!(!timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::plain(cb)));
         assert!(!ptr.is_null());
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
-        assert_ne!(timer.data.get(), 0);
+        assert!(!timer.data.get_mut().is_null());
     }
 }

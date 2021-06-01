@@ -1,4 +1,7 @@
-use core::time;
+use core::{mem,time};
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 #[cfg(target_pointer_width = "16")]
 type FatPtr = u32;
@@ -83,3 +86,36 @@ impl<'a> Schedule<'a> {
     }
 }
 
+struct BoxFnPtr(pub FatPtr);
+
+impl BoxFnPtr {
+    #[inline(always)]
+    const fn new() -> Self {
+        Self(0)
+    }
+
+    #[inline(always)]
+    const fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Into<BoxFnPtr> for Box<dyn FnMut()> {
+    #[inline(always)]
+    fn into(self) -> BoxFnPtr {
+        BoxFnPtr(unsafe {
+            mem::transmute(Box::into_raw(self))
+        })
+    }
+}
+
+impl Drop for BoxFnPtr {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if !self.is_null() {
+            unsafe {
+                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(self.0));
+            }
+        }
+    }
+}
