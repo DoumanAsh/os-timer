@@ -1,5 +1,10 @@
 use core::{time, ptr, mem};
+use core::cell::Cell;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use super::BoxFnPtr;
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 mod ffi {
     pub use core::ffi::c_void;
@@ -13,7 +18,7 @@ mod ffi {
         pub high_date_time: DWORD,
     }
 
-    type Callback = Option<unsafe extern "system" fn(cb_inst: *mut c_void, ctx: *mut c_void, timer: *mut c_void)>;
+    pub type Callback = Option<unsafe extern "system" fn(cb_inst: *mut c_void, ctx: *mut c_void, timer: *mut c_void)>;
 
     extern "system" {
         pub fn CloseThreadpoolTimer(ptr: *mut c_void);
@@ -24,18 +29,65 @@ mod ffi {
 }
 
 unsafe extern "system" fn timer_callback(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
-    if data.is_null() {
-        return;
-    }
-
     let cb: fn() -> () = mem::transmute(data);
 
     (cb)();
 }
 
+unsafe extern "system" fn timer_callback_unsafe(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
+    let cb: unsafe fn() -> () = mem::transmute(data);
+
+    (cb)();
+}
+
+unsafe extern "system" fn timer_callback_generic<T: FnMut() -> ()>(_: *mut ffi::c_void, data: *mut ffi::c_void, _: *mut ffi::c_void) {
+    let cb = &mut *(data as *mut T);
+
+    (cb)();
+}
+
+enum CallbackVariant {
+    PlainUnsafe(unsafe fn()),
+    Plain(fn()),
+    Closure(Box<dyn FnMut()>),
+}
+
+///Timer's callback abstraction
+pub struct Callback {
+    variant: CallbackVariant,
+    ffi_cb: ffi::Callback,
+}
+
+impl Callback {
+    ///Creates callback using plain rust function
+    pub fn plain(cb: fn()) -> Self {
+        Self {
+            variant: CallbackVariant::Plain(cb),
+            ffi_cb: Some(timer_callback),
+        }
+    }
+
+    ///Creates callback using plain unsafe function
+    pub fn unsafe_plain(cb: unsafe fn()) -> Self {
+        Self {
+            variant: CallbackVariant::PlainUnsafe(cb),
+            ffi_cb: Some(timer_callback_unsafe),
+        }
+    }
+
+    ///Creates callback using closure, storing it on heap.
+    pub fn closure<F: 'static + FnMut()>(cb: F) -> Self {
+        Self {
+            variant: CallbackVariant::Closure(Box::new(cb)),
+            ffi_cb: Some(timer_callback_generic::<F>),
+        }
+    }
+}
+
 ///Windows thread pool timer
 pub struct Timer {
     inner: AtomicPtr<ffi::c_void>,
+    data: Cell<BoxFnPtr>,
 }
 
 impl Timer {
@@ -45,7 +97,8 @@ impl Timer {
     ///In order to use it one must call `init`.
     pub const unsafe fn uninit() -> Self {
         Self {
-            inner: AtomicPtr::new(ptr::null_mut())
+            inner: AtomicPtr::new(ptr::null_mut()),
+            data: Cell::new(BoxFnPtr::new()),
         }
     }
 
@@ -65,22 +118,41 @@ impl Timer {
     #[must_use]
     ///Performs timer initialization
     ///
-    ///`cb` pointer to function to invoke when timer expires.
+    ///`cb` is variant of callback to invoke when timer expires
     ///
     ///Returns whether timer has been initialized successfully or not.
     ///
     ///If timer is already initialized does nothing, returning false.
-    pub fn init(&self, cb: fn()) -> bool {
+    pub fn init(&self, cb: Callback) -> bool {
         if self.is_init() {
             return false;
         }
 
+        let ffi_cb = cb.ffi_cb;
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
+        };
+
         let handle = unsafe {
-            ffi::CreateThreadpoolTimer(Some(timer_callback), cb as _, ptr::null_mut())
+            ffi::CreateThreadpoolTimer(ffi_cb, ffi_data, ptr::null_mut())
         };
 
         match self.inner.compare_exchange(ptr::null_mut(), handle, Ordering::SeqCst, Ordering::Acquire) {
-            Ok(_) => !handle.is_null(),
+            Ok(_) => match handle.is_null() {
+                true => false,
+                false => {
+                    match cb.variant {
+                        CallbackVariant::Closure(cb) => {
+                            //safe because we can never reach here once `handle.is_null() != true`
+                            self.data.set(cb.into())
+                        },
+                        _ => (),
+                    }
+                    true
+                },
+            },
             Err(_) => {
                 unsafe {
                     ffi::CloseThreadpoolTimer(handle);
@@ -93,17 +165,30 @@ impl Timer {
     ///Creates new timer, invoking provided `cb` when timer expires.
     ///
     ///On failure, returns `None`
-    pub fn new(cb: fn()) -> Option<Self> {
+    pub fn new(cb: Callback) -> Option<Self> {
+        let ffi_cb = cb.ffi_cb;
+        let ffi_data = match cb.variant {
+            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
+            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
+        };
+
         let handle = unsafe {
-            ffi::CreateThreadpoolTimer(Some(timer_callback), cb as _, ptr::null_mut())
+            ffi::CreateThreadpoolTimer(ffi_cb, ffi_data, ptr::null_mut())
         };
 
         if handle.is_null() {
             return None;
         }
 
+        let data = match cb.variant {
+            CallbackVariant::Closure(cb) => cb.into(),
+            _ => BoxFnPtr::new(),
+        };
+
         Some(Self {
-            inner: AtomicPtr::new(handle)
+            inner: AtomicPtr::new(handle),
+            data: Cell::new(data),
         })
     }
 
@@ -151,5 +236,56 @@ impl Drop for Timer {
                 ffi::CloseThreadpoolTimer(handle);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_plain_fn() {
+        let mut timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::plain(cb)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert!(timer.data.get_mut().is_null());
+
+        assert!(!timer.init(Callback::closure(closure)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert!(timer.data.get_mut().is_null());
+    }
+
+    #[test]
+    fn init_closure() {
+        let mut timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::closure(closure)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert!(!timer.data.get_mut().is_null());
+
+        assert!(!timer.init(Callback::plain(cb)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert!(!timer.data.get_mut().is_null());
     }
 }

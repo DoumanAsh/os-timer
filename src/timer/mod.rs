@@ -1,4 +1,14 @@
-use core::time;
+use core::{mem,time};
+
+extern crate alloc;
+use alloc::boxed::Box;
+
+#[cfg(target_pointer_width = "16")]
+type FatPtr = u32;
+#[cfg(target_pointer_width = "32")]
+type FatPtr = u64;
+#[cfg(target_pointer_width = "64")]
+type FatPtr = u128;
 
 #[cfg(windows)]
 mod win32;
@@ -73,5 +83,39 @@ impl<'a> Schedule<'a> {
     ///Returns `true` if successfully set, otherwise on error returns `false`
     pub fn schedule(&self) -> bool {
         self.timer.schedule_interval(self.timeout, self.interval)
+    }
+}
+
+struct BoxFnPtr(pub FatPtr);
+
+impl BoxFnPtr {
+    #[inline(always)]
+    const fn new() -> Self {
+        Self(0)
+    }
+
+    #[inline(always)]
+    const fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl Into<BoxFnPtr> for Box<dyn FnMut()> {
+    #[inline(always)]
+    fn into(self) -> BoxFnPtr {
+        BoxFnPtr(unsafe {
+            mem::transmute(Box::into_raw(self))
+        })
+    }
+}
+
+impl Drop for BoxFnPtr {
+    #[inline(always)]
+    fn drop(&mut self) {
+        if !self.is_null() {
+            unsafe {
+                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(self.0));
+            }
+        }
     }
 }
