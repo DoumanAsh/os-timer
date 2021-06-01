@@ -250,3 +250,54 @@ impl Drop for Timer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_plain_fn() {
+        let timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::plain(cb)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert_eq!(timer.data.get(), 0);
+
+        assert!(!timer.init(Callback::closure(closure)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert_eq!(timer.data.get(), 0);
+    }
+
+    #[test]
+    fn init_closure() {
+        let timer = unsafe {
+            Timer::uninit()
+        };
+
+        fn cb() {
+        }
+
+        let closure = || {
+        };
+
+        assert!(timer.init(Callback::closure(closure)));
+        let ptr = timer.inner.load(Ordering::Relaxed);
+        assert!(!ptr.is_null());
+        assert_ne!(timer.data.get(), 0);
+
+        assert!(!timer.init(Callback::plain(cb)));
+        assert!(!ptr.is_null());
+        assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
+        assert_ne!(timer.data.get(), 0);
+    }
+}
