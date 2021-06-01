@@ -248,6 +248,13 @@ impl Drop for Timer {
                 ffi::timer_delete(handle)
             }
         }
+
+        let data = self.data.get();
+        if data != 0 {
+            unsafe {
+                let _ = Box::from_raw(mem::transmute::<_, *mut dyn FnMut()>(data));
+            }
+        }
     }
 }
 
