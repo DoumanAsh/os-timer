@@ -276,8 +276,10 @@ impl Timer {
     #[inline]
     ///Cancels ongoing timer, if it was scheduled.
     pub fn cancel(&self) {
-        unsafe {
-            ffi::timer_settime(self.get_inner(), 0, &mem::MaybeUninit::zeroed().assume_init(), ptr::null_mut());
+        if self.is_scheduled() {
+            unsafe {
+                ffi::timer_settime(self.get_inner(), 0, &mem::MaybeUninit::zeroed().assume_init(), ptr::null_mut());
+            }
         }
     }
 }
