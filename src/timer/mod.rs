@@ -45,6 +45,7 @@ impl Timer {
     ///Schedules timer to alarm once after `timeout` passes.
     ///
     ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
+    ///Depending on OS, it may lead to call of callback.
     ///To prevent that user must `cancel` timer first.
     ///
     ///Returns `true` if successfully set, otherwise on error returns `false`
