@@ -41,21 +41,27 @@ mod ffi {
 }
 
 unsafe extern "C" fn timer_callback(data: *mut ffi::c_void) {
-    let cb: fn() -> () = mem::transmute(data);
+    if !data.is_null() {
+        let cb: fn() -> () = mem::transmute(data);
 
-    (cb)();
+        (cb)();
+    }
 }
 
 unsafe extern "C" fn timer_callback_unsafe(data: *mut ffi::c_void) {
-    let cb: unsafe fn() -> () = mem::transmute(data);
+    if !data.is_null() {
+        let cb: unsafe fn() -> () = mem::transmute(data);
 
-    (cb)();
+        (cb)();
+    }
 }
 
 unsafe extern "C" fn timer_callback_generic<T: FnMut() -> ()>(data: *mut ffi::c_void) {
-    let cb = &mut *(data as *mut T);
+    if !data.is_null() {
+        let cb = &mut *(data as *mut T);
 
-    (cb)();
+        (cb)();
+    }
 }
 
 enum CallbackVariant {

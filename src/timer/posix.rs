@@ -15,21 +15,27 @@ mod ffi {
     pub type Callback = Option<unsafe extern "C" fn(libc::sigval)>;
 
     pub unsafe extern "C" fn timer_callback(value: libc::sigval) {
-        let cb: fn() -> () = mem::transmute(value.sival_ptr);
+        if !value.sival_ptr.is_null() {
+            let cb: fn() -> () = mem::transmute(value.sival_ptr);
 
-        (cb)();
+            (cb)();
+        }
     }
 
     pub unsafe extern "C" fn timer_callback_unsafe(value: libc::sigval) {
-        let cb: unsafe fn() -> () = mem::transmute(value.sival_ptr);
+        if !value.sival_ptr.is_null() {
+            let cb: unsafe fn() -> () = mem::transmute(value.sival_ptr);
 
-        (cb)();
+            (cb)();
+        }
     }
 
     pub unsafe extern "C" fn timer_callback_generic<T: FnMut() -> ()>(value: libc::sigval) {
-        let cb = &mut *(value.sival_ptr as *mut T);
+        if !value.sival_ptr.is_null() {
+            let cb = &mut *(value.sival_ptr as *mut T);
 
-        (cb)();
+            (cb)();
+        }
     }
 
     #[repr(C)]
