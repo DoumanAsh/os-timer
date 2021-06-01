@@ -30,7 +30,8 @@ unsafe impl Sync for Timer {}
 
 impl Timer {
     #[inline(always)]
-    ///Creates new schedule
+    ///Creates new schedule, providing convenient interface to configure timer in non-error-prone
+    ///way.
     pub const fn schedule(&self) -> Schedule<'_> {
         Schedule {
             timer: self,
