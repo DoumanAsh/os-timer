@@ -32,6 +32,10 @@ impl Timer {
     #[inline(always)]
     ///Creates new schedule, providing convenient interface to configure timer in non-error-prone
     ///way.
+    ///
+    ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
+    ///Depending on OS, it may lead to call of callback.
+    ///To prevent that user must `cancel` timer first.
     pub const fn schedule(&self) -> Schedule<'_> {
         Schedule {
             timer: self,
