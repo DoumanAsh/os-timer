@@ -266,11 +266,11 @@ mod tests {
 
         assert!(timer.init(Callback::plain(cb)));
         let ptr = timer.inner.load(Ordering::Relaxed);
-        assert!(!ptr.is_null());
+        assert_ne!(ptr, 0);
         assert!(timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::closure(closure)));
-        assert!(!ptr.is_null());
+        assert_ne!(ptr, 0);
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
         assert!(timer.data.get_mut().is_null());
     }
@@ -289,11 +289,11 @@ mod tests {
 
         assert!(timer.init(Callback::closure(closure)));
         let ptr = timer.inner.load(Ordering::Relaxed);
-        assert!(!ptr.is_null());
+        assert_ne!(ptr, 0);
         assert!(!timer.data.get_mut().is_null());
 
         assert!(!timer.init(Callback::plain(cb)));
-        assert!(!ptr.is_null());
+        assert_ne!(ptr, 0);
         assert_eq!(ptr, timer.inner.load(Ordering::Relaxed));
         assert!(!timer.data.get_mut().is_null());
     }
