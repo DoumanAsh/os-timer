@@ -24,6 +24,7 @@ mod ffi {
         pub fn CloseThreadpoolTimer(ptr: *mut c_void);
         pub fn CreateThreadpoolTimer(cb: Callback, user_data: *mut c_void, env: *mut c_void) -> *mut c_void;
         pub fn SetThreadpoolTimerEx(timer: *mut c_void, pftDueTime: *mut FileTime, msPeriod: DWORD, msWindowLength: DWORD) -> BOOL;
+        pub fn IsThreadpoolTimerSet(timer: *mut c_void) -> BOOL;
         pub fn WaitForThreadpoolTimerCallbacks(timer: *mut c_void, fCancelPendingCallbacks: BOOL);
     }
 }
@@ -217,7 +218,20 @@ impl Timer {
         true
     }
 
-    ///Cancels ongoing timer, if it was armed.
+    #[inline]
+    ///Returns `true` if timer has been scheduled and still pending.
+    ///
+    ///On Win/Mac it only returns whether timer has been scheduled, as there is no way to check
+    ///whether timer is ongoing
+    pub fn is_scheduled(&self) -> bool {
+        let handle = self.get_inner();
+        unsafe {
+            ffi::IsThreadpoolTimerSet(handle) != 0
+        }
+    }
+
+    #[inline]
+    ///Cancels ongoing timer, if it was scheduled.
     pub fn cancel(&self) {
         let handle = self.get_inner();
         unsafe {

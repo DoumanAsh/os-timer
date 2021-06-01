@@ -280,7 +280,16 @@ impl Timer {
     }
 
     #[inline]
-    ///Cancels ongoing timer, if it was armed.
+    ///Returns `true` if timer has been scheduled and still pending.
+    ///
+    ///On Win/Mac it only returns whether timer has been scheduled, as there is no way to check
+    ///whether timer is ongoing
+    pub fn is_scheduled(&self) -> bool {
+        !self.suspend.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    ///Cancels ongoing timer, if it was scheduled.
     pub fn cancel(&self) {
         self.suspend()
     }

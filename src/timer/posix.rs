@@ -33,13 +33,33 @@ mod ffi {
     }
 
     #[repr(C)]
-    pub struct itimerspec {
-        pub it_interval: libc::timespec,
-        pub it_value: libc::timespec,
+    #[derive(PartialEq)]
+    pub struct timespec {
+        pub tv_sec: libc::time_t,
+        pub tv_nsec: libc::c_long,
     }
+
+    #[repr(C)]
+    #[derive(PartialEq)]
+    pub struct itimerspec {
+        pub it_interval: timespec,
+        pub it_value: timespec,
+    }
+
+    pub const ZERO_TIMER_DURATION: itimerspec = itimerspec {
+        it_interval: timespec {
+            tv_sec: 0,
+            tv_nsec: 0
+        },
+        it_value: timespec {
+            tv_sec: 0,
+            tv_nsec: 0
+        },
+    };
 
     extern "C" {
         pub fn timer_settime(timerid: timer_t, flags: libc::c_int, new_value: *const itimerspec, old_value: *mut itimerspec) -> libc::c_int;
+        pub fn timer_gettime(timerid: timer_t, curr_value: *const itimerspec) -> libc::c_int;
         pub fn timer_delete(timerid: timer_t);
     }
 
@@ -202,7 +222,7 @@ impl Timer {
     ///
     ///Returns `true` if successfully set, otherwise on error returns `false`
     pub fn schedule_interval(&self, timeout: time::Duration, interval: time::Duration) -> bool {
-        let it_value = libc::timespec {
+        let it_value = ffi::timespec {
             tv_sec: timeout.as_secs() as libc::time_t,
             #[cfg(not(any(target_os = "openbsd", target_os = "netbsd")))]
             tv_nsec: timeout.subsec_nanos() as libc::suseconds_t,
@@ -210,7 +230,7 @@ impl Timer {
             tv_nsec: timeout.subsec_nanos() as libc::c_long,
         };
 
-        let it_interval = libc::timespec {
+        let it_interval = ffi::timespec {
             tv_sec: interval.as_secs() as libc::time_t,
             #[cfg(not(any(target_os = "openbsd", target_os = "netbsd")))]
             tv_nsec: interval.subsec_nanos() as libc::suseconds_t,
@@ -228,7 +248,27 @@ impl Timer {
         }
     }
 
-    ///Cancels ongoing timer, if it was armed.
+    #[inline]
+    ///Returns `true` if timer has been scheduled and still pending.
+    ///
+    ///On Win/Mac it only returns whether timer has been scheduled, as there is no way to check
+    ///whether timer is ongoing
+    pub fn is_scheduled(&self) -> bool {
+        let handle = self.get_inner();
+        let curr_value = unsafe {
+            let mut curr_value = mem::MaybeUninit::<ffi::itimerspec>::uninit();
+
+            if ffi::timer_gettime(handle, curr_value.as_mut_ptr()) != 0 {
+                return false;
+            }
+            curr_value.assume_init()
+        };
+
+        curr_value != ffi::ZERO_TIMER_DURATION
+    }
+
+    #[inline]
+    ///Cancels ongoing timer, if it was scheduled.
     pub fn cancel(&self) {
         unsafe {
             ffi::timer_settime(self.get_inner(), 0, &mem::MaybeUninit::zeroed().assume_init(), ptr::null_mut());
