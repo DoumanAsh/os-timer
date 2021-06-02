@@ -100,15 +100,6 @@ impl BoxFnPtr {
     }
 }
 
-impl Into<BoxFnPtr> for Box<dyn FnMut()> {
-    #[inline(always)]
-    fn into(self) -> BoxFnPtr {
-        BoxFnPtr(unsafe {
-            mem::transmute(Box::into_raw(self))
-        })
-    }
-}
-
 impl Drop for BoxFnPtr {
     #[inline(always)]
     fn drop(&mut self) {

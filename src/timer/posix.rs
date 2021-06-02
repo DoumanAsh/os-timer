@@ -158,10 +158,13 @@ impl Timer {
         }
 
         let ffi_cb = cb.ffi_cb;
-        let ffi_data = match cb.variant {
-            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
-            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
-            CallbackVariant::Closure(ref cb) => cb as *const _ as *mut ffi::c_void,
+        let (data, ffi_data) = match cb.variant {
+            CallbackVariant::Plain(cb) => (BoxFnPtr(0), cb as *mut ffi::c_void),
+            CallbackVariant::PlainUnsafe(cb) => (BoxFnPtr(0), cb as *mut ffi::c_void),
+            CallbackVariant::Closure(cb) => unsafe {
+                let raw = Box::into_raw(cb);
+                (BoxFnPtr(mem::transmute(raw)), raw as *mut ffi::c_void)
+            },
         };
 
         let handle = unsafe {
@@ -172,13 +175,8 @@ impl Timer {
             Ok(_) => match handle {
                 0 => false,
                 _ => {
-                    match cb.variant {
-                        CallbackVariant::Closure(cb) => {
-                            //safe because we can never reach here once `handle.is_null() != true`
-                            self.data.set(cb.into());
-                        },
-                        _ => (),
-                    }
+                    //safe because we can never reach here once `handle.is_null() != true`
+                    self.data.set(data);
                     true
                 },
             },
@@ -196,10 +194,13 @@ impl Timer {
     ///On failure, returns `None`
     pub fn new(cb: Callback) -> Option<Self> {
         let ffi_cb = cb.ffi_cb;
-        let ffi_data = match cb.variant {
-            CallbackVariant::Plain(cb) => cb as *mut ffi::c_void,
-            CallbackVariant::PlainUnsafe(cb) => cb as *mut ffi::c_void,
-            CallbackVariant::Closure(ref cb) => &*cb as *const _ as *mut ffi::c_void,
+        let (data, ffi_data) = match cb.variant {
+            CallbackVariant::Plain(cb) => (BoxFnPtr(0), cb as *mut ffi::c_void),
+            CallbackVariant::PlainUnsafe(cb) => (BoxFnPtr(0), cb as *mut ffi::c_void),
+            CallbackVariant::Closure(cb) => unsafe {
+                let raw = Box::into_raw(cb);
+                (BoxFnPtr(mem::transmute(raw)), raw as *mut ffi::c_void)
+            },
         };
 
         let handle = unsafe {
@@ -209,11 +210,6 @@ impl Timer {
         if handle == 0 {
             return None;
         }
-
-        let data = match cb.variant {
-            CallbackVariant::Closure(cb) => cb.into(),
-            _ => BoxFnPtr::new(),
-        };
 
         Some(Self {
             inner: AtomicUsize::new(handle),
