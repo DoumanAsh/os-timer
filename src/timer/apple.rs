@@ -12,7 +12,7 @@ mod ffi {
     type uintptr_t = usize;
     type c_long = i64;
     type c_ulong = u64;
-    pub type Callback = Option<unsafe extern "C" fn(*mut c_void)>;
+    pub type Callback = unsafe extern "C" fn(*mut c_void);
 
     pub type dispatch_object_t = *const c_void;
     pub type dispatch_queue_t = *const c_void;
@@ -65,9 +65,8 @@ unsafe extern "C" fn timer_callback_generic<T: FnMut() -> ()>(data: *mut ffi::c_
 }
 
 enum CallbackVariant {
-    PlainUnsafe(unsafe fn()),
-    Plain(fn()),
-    Closure(Box<dyn FnMut()>),
+    Trivial(*mut ffi::c_void),
+    Boxed(Box<dyn FnMut()>),
 }
 
 ///Timer's callback abstraction
@@ -77,27 +76,37 @@ pub struct Callback {
 }
 
 impl Callback {
+    ///Creates raw callback for platform timer.
+    ///
+    ///Signature depends on platform.
+    pub unsafe fn raw(ffi_cb: ffi::Callback, data: *mut ffi::c_void) -> Self {
+        Self {
+            variant: CallbackVariant::Trivial(data),
+            ffi_cb,
+        }
+    }
+
     ///Creates callback using plain rust function
     pub fn plain(cb: fn()) -> Self {
         Self {
-            variant: CallbackVariant::Plain(cb),
-            ffi_cb: Some(timer_callback),
+            variant: CallbackVariant::Trivial(cb as _),
+            ffi_cb: timer_callback,
         }
     }
 
     ///Creates callback using plain unsafe function
     pub fn unsafe_plain(cb: unsafe fn()) -> Self {
         Self {
-            variant: CallbackVariant::PlainUnsafe(cb),
-            ffi_cb: Some(timer_callback_unsafe),
+            variant: CallbackVariant::Trivial(cb as _),
+            ffi_cb: timer_callback_unsafe,
         }
     }
 
     ///Creates callback using closure, storing it on heap.
     pub fn closure<F: 'static + FnMut()>(cb: F) -> Self {
         Self {
-            variant: CallbackVariant::Closure(Box::new(cb)),
-            ffi_cb: Some(timer_callback_generic::<F>),
+            variant: CallbackVariant::Boxed(Box::new(cb)),
+            ffi_cb: timer_callback_generic::<F>,
         }
     }
 }
@@ -179,9 +188,8 @@ impl Timer {
                 false => {
                     let ffi_cb = cb.ffi_cb;
                     let (data, ffi_data) = match cb.variant {
-                        CallbackVariant::Plain(cb) => (0, cb as *mut ffi::c_void),
-                        CallbackVariant::PlainUnsafe(cb) => (0, cb as *mut ffi::c_void),
-                        CallbackVariant::Closure(cb) => unsafe {
+                        CallbackVariant::Trivial(data) => (0, data),
+                        CallbackVariant::Boxed(cb) => unsafe {
                             let raw = Box::into_raw(cb);
                             (mem::transmute(raw), raw as *mut ffi::c_void)
                         },
@@ -220,9 +228,8 @@ impl Timer {
 
         let ffi_cb = cb.ffi_cb;
         let (data, ffi_data) = match cb.variant {
-            CallbackVariant::Plain(cb) => (0, cb as *mut ffi::c_void),
-            CallbackVariant::PlainUnsafe(cb) => (0, cb as *mut ffi::c_void),
-            CallbackVariant::Closure(cb) => unsafe {
+            CallbackVariant::Trivial(data) => (0, data),
+            CallbackVariant::Boxed(cb) => unsafe {
                 let raw = Box::into_raw(cb);
                 (mem::transmute(raw), raw as *mut ffi::c_void)
             },
