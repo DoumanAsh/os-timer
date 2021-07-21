@@ -111,10 +111,10 @@ impl Callback {
     }
 }
 
-///Windows thread pool timer
+///Apple source dispatch timer.
 pub struct Timer {
     inner: AtomicPtr<ffi::c_void>,
-    //Suspension count. Incremented suspend, and decremented on each resume
+    //Suspension count. Incremented on suspend, and decremented on each resume
     suspend: AtomicBool,
     data: Cell<BoxFnPtr>,
 }
@@ -268,7 +268,7 @@ impl Timer {
 
     ///Schedules timer to alarm periodically with `interval` with initial alarm of `timeout`.
     ///
-    ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
+    ///Note that if timer has been scheduled before, but hasn't expire yet, behaviour is undefined (Callback may or may not be called).
     ///To prevent that user must `cancel` timer first.
     ///
     ///# Note

@@ -204,7 +204,7 @@ impl Timer {
 
     ///Schedules timer to alarm periodically with `interval` with initial alarm of `timeout`.
     ///
-    ///Note that if timer has been scheduled before, but hasn't expire yet, it shall be cancelled.
+    ///Note that if timer has been scheduled before, but hasn't expire yet, behaviour is undefined (Callback may or may not be called).
     ///To prevent that user must `cancel` timer first.
     ///
     ///# Note
