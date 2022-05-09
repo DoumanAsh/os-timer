@@ -69,7 +69,7 @@ mod ffi {
         pub fn timer_delete(timerid: timer_t);
     }
 
-    #[link(name = "os-timer-posix-c", lind = "static")]
+    #[link(name = "os-timer-posix-c", kind = "static")]
     extern "C" {
         pub fn posix_timer(clock: libc::c_int, cb: Callback, data: *mut libc::c_void) -> timer_t;
     }
