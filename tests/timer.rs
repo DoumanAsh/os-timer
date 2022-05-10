@@ -55,7 +55,7 @@ fn timer_schedule_interval() {
     std::thread::sleep(time::Duration::from_millis(1100));
     assert_eq!(COUNT.load(Ordering::Acquire), 1);
     assert!(timer.is_scheduled());
-    std::thread::sleep(time::Duration::from_millis(1100));
+    std::thread::sleep(time::Duration::from_millis(1150));
     assert_eq!(COUNT.load(Ordering::Acquire), 5);
     assert!(timer.is_scheduled());
 
