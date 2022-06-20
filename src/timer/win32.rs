@@ -114,7 +114,7 @@ impl Timer {
     pub const unsafe fn uninit() -> Self {
         Self {
             inner: AtomicPtr::new(ptr::null_mut()),
-            data: Cell::new(BoxFnPtr::new()),
+            data: Cell::new(BoxFnPtr::null()),
         }
     }
 
@@ -146,7 +146,7 @@ impl Timer {
 
         let ffi_cb = cb.ffi_cb;
         let (data, ffi_data) = match cb.variant {
-            CallbackVariant::Trivial(data) => (BoxFnPtr(0), data),
+            CallbackVariant::Trivial(data) => (BoxFnPtr::null(), data),
             CallbackVariant::Boxed(cb) => unsafe {
                 let raw = Box::into_raw(cb);
                 (BoxFnPtr(mem::transmute(raw)), raw as *mut ffi::c_void)
@@ -181,7 +181,7 @@ impl Timer {
     pub fn new(cb: Callback) -> Option<Self> {
         let ffi_cb = cb.ffi_cb;
         let (data, ffi_data) = match cb.variant {
-            CallbackVariant::Trivial(data) => (BoxFnPtr(0), data),
+            CallbackVariant::Trivial(data) => (BoxFnPtr::null(), data),
             CallbackVariant::Boxed(cb) => unsafe {
                 let raw = Box::into_raw(cb);
                 (BoxFnPtr(mem::transmute(raw)), raw as *mut ffi::c_void)

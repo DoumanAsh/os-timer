@@ -1,7 +1,7 @@
 use core::{time, mem, ptr};
 use core::cell::Cell;
 use core::sync::atomic::{AtomicPtr, AtomicBool, Ordering};
-use super::BoxFnPtr;
+use super::{FatPtr, BoxFnPtr};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -129,7 +129,7 @@ impl Timer {
             inner: AtomicPtr::new(ptr::null_mut()),
             //Note timer is created suspended.
             suspend: AtomicBool::new(true),
-            data: Cell::new(BoxFnPtr::new()),
+            data: Cell::new(BoxFnPtr::null()),
         }
     }
 
@@ -188,7 +188,7 @@ impl Timer {
                 false => {
                     let ffi_cb = cb.ffi_cb;
                     let (data, ffi_data) = match cb.variant {
-                        CallbackVariant::Trivial(data) => (0, data),
+                        CallbackVariant::Trivial(data) => (FatPtr::null(), data),
                         CallbackVariant::Boxed(cb) => unsafe {
                             let raw = Box::into_raw(cb);
                             (mem::transmute(raw), raw as *mut ffi::c_void)
@@ -228,7 +228,7 @@ impl Timer {
 
         let ffi_cb = cb.ffi_cb;
         let (data, ffi_data) = match cb.variant {
-            CallbackVariant::Trivial(data) => (0, data),
+            CallbackVariant::Trivial(data) => (FatPtr::null(), data),
             CallbackVariant::Boxed(cb) => unsafe {
                 let raw = Box::into_raw(cb);
                 (mem::transmute(raw), raw as *mut ffi::c_void)

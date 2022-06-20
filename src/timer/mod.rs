@@ -3,12 +3,27 @@ use core::{mem,time};
 extern crate alloc;
 use alloc::boxed::Box;
 
-#[cfg(target_pointer_width = "16")]
-type FatPtr = u32;
-#[cfg(target_pointer_width = "32")]
-type FatPtr = u64;
-#[cfg(target_pointer_width = "64")]
-type FatPtr = u128;
+#[derive(PartialEq, Clone, Copy)]
+#[repr(C)]
+struct FatPtr {
+    ptr: usize,
+    vtable: usize,
+}
+
+impl FatPtr {
+    #[inline(always)]
+    const fn null() -> Self {
+        Self {
+            ptr: 0,
+            vtable: 0
+        }
+    }
+
+    #[inline(always)]
+    const fn is_null(&self) -> bool {
+        self.ptr == 0 && self.vtable == 0
+    }
+}
 
 #[cfg(windows)]
 mod win32;
@@ -90,13 +105,13 @@ struct BoxFnPtr(pub FatPtr);
 
 impl BoxFnPtr {
     #[inline(always)]
-    const fn new() -> Self {
-        Self(0)
+    const fn null() -> Self {
+        Self(FatPtr::null())
     }
 
     #[inline(always)]
     const fn is_null(&self) -> bool {
-        self.0 == 0
+        self.0.is_null()
     }
 }
 
