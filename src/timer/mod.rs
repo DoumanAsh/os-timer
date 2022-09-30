@@ -49,7 +49,7 @@ impl Timer {
     pub const fn schedule(&self) -> Schedule<'_> {
         Schedule {
             timer: self,
-            timeout: time::Duration::from_secs(0),
+            timeout: time::Duration::from_millis(1),
             interval: time::Duration::from_secs(0),
         }
     }
@@ -63,6 +63,8 @@ impl Timer {
     ///
     ///Returns `true` if successfully set, otherwise on error returns `false`
     pub fn schedule_once(&self, timeout: time::Duration) -> bool {
+        //Settings zero initial timeout makes no sense
+        assert!(!(timeout.as_secs() == 0 && timeout.as_nanos() == 0), "Cannot set zero initial timeout");
         self.schedule_interval(timeout, time::Duration::from_secs(0))
     }
 }
@@ -78,6 +80,8 @@ impl<'a> Schedule<'a> {
     #[inline(always)]
     ///Sets initial `timeout` to fire timer.
     pub const fn initial(mut self, timeout: time::Duration) -> Self {
+        //Settings zero initial timeout makes no sense
+        assert!(!(timeout.as_secs() == 0 && timeout.as_nanos() == 0), "Cannot set zero initial timeout");
         self.timeout = timeout;
         self
     }
