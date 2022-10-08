@@ -65,3 +65,33 @@ fn timer_schedule_interval() {
     std::thread::sleep(time::Duration::from_millis(1100));
     assert_eq!(COUNT.load(Ordering::Acquire), 5);
 }
+
+#[test]
+fn timer_schedule_interval_without_initial() {
+    static COUNT: AtomicU8 = AtomicU8::new(0);
+
+    fn cb() {
+        COUNT.fetch_add(1, Ordering::AcqRel);
+    }
+
+    let timer = Timer::new(Callback::plain(cb)).expect("To create timer");
+    assert!(!timer.is_scheduled());
+    assert!(timer.schedule().interval(time::Duration::from_millis(200)).schedule());
+    assert!(timer.is_scheduled());
+
+    std::thread::sleep(time::Duration::from_millis(150));
+    assert_eq!(COUNT.load(Ordering::Acquire), 0);
+    assert!(timer.is_scheduled());
+    std::thread::sleep(time::Duration::from_millis(150));
+    assert_eq!(COUNT.load(Ordering::Acquire), 1);
+    assert!(timer.is_scheduled());
+    std::thread::sleep(time::Duration::from_millis(1000));
+    assert_eq!(COUNT.load(Ordering::Acquire), 6);
+    assert!(timer.is_scheduled());
+
+    timer.cancel();
+    assert!(!timer.is_scheduled());
+
+    std::thread::sleep(time::Duration::from_secs(1));
+    assert_eq!(COUNT.load(Ordering::Acquire), 6);
+}

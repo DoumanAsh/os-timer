@@ -49,7 +49,7 @@ impl Timer {
     pub const fn schedule(&self) -> Schedule<'_> {
         Schedule {
             timer: self,
-            timeout: time::Duration::from_millis(1),
+            timeout: time::Duration::from_millis(0),
             interval: time::Duration::from_secs(0),
         }
     }
@@ -70,6 +70,8 @@ impl Timer {
 }
 
 ///Timer's schedule
+///
+///If initial timeout is not configured, then it is set to `interval` timeout
 pub struct Schedule<'a> {
     timer: &'a Timer,
     timeout: time::Duration,
@@ -101,7 +103,11 @@ impl<'a> Schedule<'a> {
     ///
     ///Returns `true` if successfully set, otherwise on error returns `false`
     pub fn schedule(&self) -> bool {
-        self.timer.schedule_interval(self.timeout, self.interval)
+        if self.timeout == time::Duration::ZERO {
+            self.timer.schedule_interval(self.interval, self.interval)
+        } else {
+            self.timer.schedule_interval(self.timeout, self.interval)
+        }
     }
 }
 
